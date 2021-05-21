@@ -139,12 +139,6 @@ def order(a, m):
             if a ** (i + 1) % m == 1:
                 return i + 1
 
-def powmod(x, y, m):
-    ret = 1
-    for i in range(y):
-        ret = ret * x % m
-    return ret
-
 def g(m):
     ret = []
     g = 0
