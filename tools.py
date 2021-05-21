@@ -70,7 +70,7 @@ class Point:
     def __sub__(self, other):
         return Point(self.x - other.x, self.y - other.y)
 
-class ECCPoint(Point):
+class ECC(Point):
     
     def __init__(self, a, b, p, O = False, x = None, y = None):
         self.a = a
