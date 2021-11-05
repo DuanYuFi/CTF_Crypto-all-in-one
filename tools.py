@@ -2,16 +2,13 @@
 """
 Created on Sat Nov 21 11:10:52 2020
 
-@author: 段宇飞
+@author: DuanYuFi
 """
 from math import gcd, sqrt, ceil
 from Crypto.Util.number import *
 import base64
-import requests
 import gmpy2
-import re
-import json
-import random, time
+import random
 
 morse = {}
 morse['01'] = 'a'
@@ -70,11 +67,11 @@ class Point:
     def __sub__(self, other):
         return Point(self.x - other.x, self.y - other.y)
 
-class ECC(Point):
+class ECCPoint(Point):
     
     def __init__(self, a, b, p, O = False, x = None, y = None):
-        self.a = a
-        self.b = b
+        self.a = a % p
+        self.b = b % p
         self.p = p
         self.O = O
         if x != None:
@@ -82,9 +79,12 @@ class ECC(Point):
         if y != None:
             self.y = y
     
-    def addPoint(self, x, y):
-        tmp = ECCPoint(self.a, self.b, self.p, x = x, y = y)
-        return tmp
+    def Point(self, x, y = None):
+        if x == 'O':
+            return ECCPoint(self.a, self.b, self.p, True)
+        else:
+            return ECCPoint(self.a, self.b, self.p, x = x, y = y)
+
     
     def __str__(self):
         if self.O:
@@ -96,8 +96,16 @@ class ECC(Point):
         return self.__str__()
     
     def __add__(self, other):
+        
+        if self.a != other.a or self.b != other.b or self.p != other.p:
+            raise ValueError("cannot calculate on different curve")
+        
         if other.O:
             return self
+        if self.O:
+            return other
+        
+        
         x1, y1 = self.x, self.y
         x2, y2 = other.x, other.y
         if x1 == x2 and (y1 + y2) % self.p == 0:
@@ -113,21 +121,70 @@ class ECC(Point):
     
     
     def __mul__(self, other):
-        if other == 1:
-            return self
-        tmp = ECCPoint(self.a, self.b, self.p,x = self.x, y = self.y)
-        for i in range(other - 1):
-            tmp = tmp + self
+        Q = ECCPoint(self.a, self.b, self.p, self.O, self.x, self.y)
+        R = self.Point('O')
+        while other > 0:
+            if other & 1 == 1:
+                R = R + Q
+            Q = Q + Q
+            other >>= 1
         
-        return tmp
+        return R
+    
+    def __rmul__(self, other):
+        return self * other
+    
+    def __eq__(self, other):
+        if self.O:
+            return other.O
+        else:
+            return self.x == other.x and self.y == other.y
+    
+
+class ECC:
+    def __init__(self, a, b, p):
+        self.a = a
+        self.b = b
+        self.p = p
+    
+    def Point(self, x, y = None):
+        if x == 'O':
+            return ECCPoint(self.a, self.b, self.p, True)
+        else:
+            return ECCPoint(self.a, self.b, self.p, x = x, y = y)
+    
+    def __str__(self):
+        s = "ELLIPTIC CURVE: Y^2 = X^3 "
+        if self.a > 0:
+            s += '+ %d*X ' % self.a
+        elif self.a < 0:
+            s += '- %d*X ' % -self.a
+        
+        if self.b > 0:
+            s += '+ %d ' % self.b
+        elif self.b < 0:
+            s += '- %d ' % -self.b
+        
+        s += 'mod %d' % self.p
+        return s
+    
+    def __repr__(self):
+        return str(self)
+    
+    def __contains__(self, other):
+        return (other.x ** 3 + self.a * other.x + self.b) % self.p\
+            == pow(other.y, 2, self.p) and other.x < self.p and other.y < self.p
+    
 
 def phi(m):
     if isPrime(m):
         return m - 1
-    ret = 0
-    for i in range(m):
-        if gcd(i + 1, m) == 1:
-            ret += 1
+    factors = factor(m)
+    factors = [each[0] for each in factors]
+    ret = m
+    for each in factors:
+        ret //= each
+        ret *= (each - 1)
     return ret
 
 def order(a, m):
@@ -136,8 +193,14 @@ def order(a, m):
     else:
         tmp = phi(m)
         for i in range(tmp):
-            if a ** (i + 1) % m == 1:
+            if pow(a, i + 1, m) == 1:
                 return i + 1
+
+def powmod(x, y, m):
+    ret = 1
+    for i in range(y):
+        ret = ret * x % m
+    return ret
 
 def g(m):
     ret = []
@@ -228,20 +291,6 @@ def num2str(num):
         s += chr(int(temp, 16))
     return s
 
-def factordb(n, timeout = 10):
-    url = "http://www.factordb.com/index.php?query=%d" % n
-    try:
-        res = requests.get(url, timeout = timeout)
-    except:
-        return None
-    res.encoding = 'utf-8'
-    ans = re.findall('color="(.*?)">(.*?)</font>', res.text, re.S)
-    ret = []
-    for i in range(len(ans)):
-        ret.append(int(ans[i][1]))
-    return ret
-    
-    
 
 def RSADecode(ciphertext, p, q, e):
     if not isinstance(ciphertext, int):
@@ -263,13 +312,14 @@ def CRT(Bs, Ms, Min = None):
     for i in range(l):
         ans = (ans + Bs[i] * (m // Ms[i]) * inverse(m // Ms[i], Ms[i])) % m
     
-    if Min != None:
+    if Min is not None:
         while ans < Min:
             ans += m
     return ans
 
-def eulerFactor(n):
-    tmp = gmpy2.iroot(n, 2)[0] + 1
+def eulerFactor(n, tmp = None):
+    if tmp is None:
+        tmp = gmpy2.iroot(n, 2)[0] + 1
     while True:
         if gmpy2.iroot(tmp * tmp - n, 2)[1]:
             m = gmpy2.iroot(tmp * tmp - n, 2)[0]
@@ -277,40 +327,44 @@ def eulerFactor(n):
         tmp += 1
 
 def str_to_Cstr(s):
+    
+    '''
+    In: print(str_to_Cstr("asd"))
+    \x61\x73\x64
+    '''
+    
     ret = ""
     for each in s:
         ret += '\\x%s' % hex(ord(each))[2:]
     
     return ret
 
-def rc4_decode(c, key):
-    url = "http://tool.chacuo.net/cryptrc4"
-    data = {}
-    data['data'] = c
-    data['type'] = 'rc4'
-    data['arg'] = "p=%s_s=gb2312_t=1" % key
+def Pollard_rho(n, random_function = None, start = None):
+        
+    if random_function is None:
+        def f(x):
+            return (x * x + random.randint(1, 3)) % n
+    else:
+        f = random_function
+        
+    if start is not None:
+        x, y = start
     
-    res = requests.post(url, data = data)
-    response = json.loads(res.text)
-    
-    return response['data'][0]
-
-def Pollard_rho(n, seed = int(time.time())):
-    
-    random.seed(seed)
-    def f(x):
-        return (x * x + seed) % n
-    
-    x = 2
-    y = f(2)
+    else:
+        x = random.randint(2, n)
+        y = f(x)
     
     while x != y:
-        x = f(x)
-        y = f(f(y))
         
         p = gcd(abs(y - x), n)
-        if p > 1:
+        if p == n:
+            x = random.randint(2, n)
+            y = f(x)
+        elif p > 1:
             return "Found Factor: %d" % p
+        else:
+            x = f(x)
+            y = f(f(y))
     
     return "Failed"
 
@@ -329,8 +383,8 @@ def Pollard_P_1(n, B):              # for p-1 is smooth
 def Williams(n, B, A = 2):          # for p+1 is smooth
     pass
 
-def RSAdecompose(n, phi):
-    tmp = phi - 1
+def RSAdecompose(n, ed):
+    tmp = ed - 1
     s = 0
     while tmp % 2 == 0:
         s += 1
@@ -360,29 +414,28 @@ def RSAdecompose(n, phi):
     
     return (p, q)
 
-def WienerAttack(e, n):
-    
-    def rational_to_quotients(x, y):
+def rational_to_quotients(x, y):
+    a = x // y
+    quotients = [a]
+    while a * y != x:
+        x, y = y, x - a * y
         a = x // y
-        quotients = [a]
-        while a * y != x:
-            x, y = y, x - a * y
-            a = x // y
-            quotients.append(a)
-        return quotients
+        quotients.append(a)
+    return quotients
 
-    def convergents_from_quotients(quotients):
-        convergents = [(quotients[0], 1)]
-        for i in range(2, len(quotients) + 1):
-            quotients_partion = quotients[0:i]
-            denom = quotients_partion[-1]  # 分母
-            num = 1
-            for _ in range(-2, -len(quotients_partion), -1):
-                num, denom = denom, quotients_partion[_] * denom + num
-            num += denom * quotients_partion[0]
-            convergents.append((num, denom))
-        return convergents
-    
+def convergents_from_quotients(quotients):
+    convergents = [(quotients[0], 1)]
+    for i in range(2, len(quotients) + 1):
+        quotients_partion = quotients[0:i]
+        denom = quotients_partion[-1]  # 分母
+        num = 1
+        for _ in range(-2, -len(quotients_partion), -1):
+            num, denom = denom, quotients_partion[_] * denom + num
+        num += denom * quotients_partion[0]
+        convergents.append((num, denom))
+    return convergents
+
+def WienerAttack(e, n):
     quotients = rational_to_quotients(e, n)
     convergents = convergents_from_quotients(quotients)
     for (k, d) in convergents:
@@ -392,7 +445,6 @@ def WienerAttack(e, n):
             coef = n - phi + 1
             delta = coef * coef - 4 * n
             if delta > 0 and gmpy2.iroot(delta, 2)[1] == True:
-                print('d = ' + str(d))
                 return d
 
 import string
@@ -430,25 +482,25 @@ class str_generator:
                 self.string = ''.join(now)
         return ret
 
-def hashbreakn(hashcode, hashfunc, n, now, charset, format_string):
+def hashbreakn(hashcode, n, now, charset, format_string, checkfunc):
     if len(now) == n:
-        if hashfunc((format_string % now).encode()).hexdigest() == hashcode:
+        if checkfunc(now, format_string, hashcode):
             return now
         else:
             return False
     
     for each in charset:
-        ret = hashbreakn(hashcode, hashfunc, n, now + each, charset, format_string)
+        ret = hashbreakn(hashcode, n, now + each, charset, format_string, checkfunc)
         if ret:
             return ret
 
     return False
 
-def hashbreak(hashcode, hashfunc, N = 0, charset = string.printable, format_string = "%s"):
+def hashbreak(hashcode, N = 0, charset = string.printable, format_string = "%s", checkfunc = None):
     length = 1
     while length != N:
         print(length)
-        ret = hashbreakn(hashcode, hashfunc, length, "", charset, format_string)
+        ret = hashbreakn(hashcode, length, "", charset, format_string, checkfunc)
         if ret:
             return ret
         length += 1
@@ -555,8 +607,8 @@ def findAllSolutions(x, e, m):
     result = set()
     for root in proots:
         tmp = one_result * root % m
-        assert pow(tmp, e, m) == x
-        result.add(tmp)
+        if pow(tmp, e, m) == x:
+            result.add(tmp)
     return list(result)
 
 
@@ -615,6 +667,8 @@ def get_key_length(text, max_length, min_length):
         strings = split_text(text, i)
         total_ic = 0
         for each in strings:
+            if len(each) == 1 or len(each) == 0:
+                continue
             total_ic += (get_ic(each) - IC) ** 2
         
         if total_ic < min_diff:
@@ -623,7 +677,7 @@ def get_key_length(text, max_length, min_length):
     return (min_diff, probably_length)
 
 
-def break_key(text, length, decode_function, key_char):
+def break_key(text, length, decode_function, key_char, charset = string.ascii_lowercase):
     strings = split_text(text, length)
     key = ""
     for i in range(length):
@@ -631,11 +685,10 @@ def break_key(text, length, decode_function, key_char):
         this_char = ''
         for each_char in key_char:
             plain_text = decode_function(strings[i], each_char).lower()
-            pure_text = ""
             count = count_p(plain_text)
             this_p = []
             total = len(plain_text)
-            for each in string.ascii_lowercase:
+            for each in charset:
                 if each not in count:
                     this_p.append(0)
                 else:
@@ -688,7 +741,7 @@ def strsub(s1, s2, charset = string.ascii_lowercase, skip = False):
         pointer = (pointer + 1) % l2
     return res
 
-def solve_classical(text, decode_function = strsub, min_length = 0, max_length = 100, key_char = string.ascii_letters):
+def solve_classical(text, decode_function = strsub, min_length = 1, max_length = 100, key_char = string.ascii_letters):
     length = get_key_length(text, max_length, min_length)[1]
     key = break_key(text, length, decode_function, key_char)
     print("=============================")
@@ -697,7 +750,151 @@ def solve_classical(text, decode_function = strsub, min_length = 0, max_length =
     print(decode_function(text, key))
     return key
 
+def related_message_attack(a, b, c1, c2, n):
+    b3 = gmpy2.powmod(b, 3, n)
+    part1 = b * (c1 + 2 * c2 - b3) % n
+    part2 = a * (c1 - c2 + 2 * b3) % n
+    part2 = gmpy2.invert(part2, n)
+    return part1 * part2 % n
 
+import subprocess
+
+def factor(N, path = "yafu-x64.exe"):
+    
+    message = b"factor(%d)" % N
+    p = subprocess.Popen(path, stdin = subprocess.PIPE, stdout = subprocess.PIPE)
+    result = p.communicate(input = message)
+    
+    try:
+    
+        res = result[0].decode()
+        res = res[res.index("***factors found***") + 23:]
+        
+        res = res.split('\r\n\r\n')[0]
+        res = res.split('\r\n')
+    
+    except:
+        print(res)
+        return None
+    
+    factors = dict()
+    
+    for each in res:
+        factor = int(each.split(' = ')[1])
+        if factor not in factors:
+            factors[factor] = 1
+        else:
+            factors[factor] += 1
+    
+    result = []
+    for each in factors:
+        result.append((each, factors[each]))
+        
+    ret = []
+    ok = False
+    while not ok:
+        ok = True
+        for each in result:
+            if not isPrime(each[0]):
+                ok = False
+                this = list(factor(each[0]))
+                for each2 in this:
+                    each2[1] *= each[1]
+                ret += this
+                
+            else:
+                ret.append(each)
+    
+    return tuple(result)
+            
+def recover1(secret, shift, nbit = 32):
+    
+    value = secret >> (nbit - shift)
+    if shift * 2 - nbit >= 0:
+        num1 = value >> (shift * 2 - nbit)
+        num2 = secret & int('1' * (nbit - shift), 2)
+        value = (value << (nbit - shift)) | (num1 ^ num2)
+    else:
+        block_size = shift
+        block_num = (nbit - shift) // block_size
+        secret2 = int(bin(secret)[2:].rjust(nbit, '0')[::-1], 2)
+        mask = int('1' * block_size, 2)
+        last = secret2 & mask
+        value = last
+        secret2 >>= block_size
+        for _ in range(block_num):
+            value = value
+            value = value | ((last ^ (secret2 & mask)) << (block_size * (_ + 1)))
+            last = last ^ (secret2 & mask)
+            secret2 >>= block_size
+            
+        left_bit = nbit % shift
+        if left_bit != 0:
+            mask = int('1' * left_bit, 2)
+            num1 = last & mask
+            value = value | ((num1 ^ secret2) << (nbit - left_bit))
+        
+        value = int(bin(value)[2:].rjust(nbit, '0')[::-1], 2)
+        
+    return value
+
+def recover2(secret, shift, and_mask, nbit = 32):
+    block_size = shift
+    block_num = nbit // block_size
+    mask = int('1' * block_size, 2)
+    last = secret & mask
+    value = last
+    secret >>= block_size
+    and_mask >>= block_size
+    for i in range(block_num - 1):
+        value = value | (((last & and_mask) ^ (secret & mask)) << (block_size * (i + 1)))
+        last = ((last & and_mask) ^ (secret & mask))
+        secret >>= block_size
+        and_mask >>= block_size
+    
+    left_bit = nbit % shift
+    if left_bit != 0:
+        value = value | ((secret ^ (last & and_mask)) << (block_num * block_size))
+        
+    return value
+
+def recover_MT(num):
+        num = recover1(num, 18, 32)
+        num = recover2(num, 15, 0xEFC60000, 32)
+        num = recover2(num, 7, 0x9D2C5680, 32)
+        num = recover1(num, 11, 32)
+        return num
+
+def recover_MT_state(nums):
+    
+    state = [recover_MT(each) for each in nums[:624]]
+    state.append(624)
+    random.seed()
+    random.setstate((3, tuple(state), None))
+
+from hashlib import sha256
+def proof(known, hashcode, charset, method = sha256):
+    for each1 in charset:
+        for each2 in charset:
+            for each3 in charset:
+                for each4 in charset:
+                    this = each1 + each2 + each3 + each4 + known
+                    if method(this.encode()).hexdigest() == hashcode:
+                        return each1 + each2 + each3 + each4
+
+def xor(s1, s2 = None):
+    if s2 is None:
+        res = 0
+        for each in s1:
+            res ^= int(each)
+        return res
+    else:
+        res = []
+        for each1, each2 in zip(s1, s2):
+            res.append(int(each1) ^ int(each2))
+        
+        return res
+        
 
 def debug():
     print(Pollard_rho(15))
