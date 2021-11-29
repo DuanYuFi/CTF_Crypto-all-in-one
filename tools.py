@@ -2,7 +2,7 @@
 """
 Created on Sat Nov 21 11:10:52 2020
 
-@author: DuanYuFi
+@author: 
 """
 from math import gcd, sqrt, ceil
 from Crypto.Util.number import *
@@ -147,7 +147,7 @@ class ECC:
         self.b = b
         self.p = p
     
-    def Point(self, x, y = None):
+    def __call__(self, x, y = None):
         if x == 'O':
             return ECCPoint(self.a, self.b, self.p, True)
         else:
@@ -196,11 +196,15 @@ def order(a, m):
             if pow(a, i + 1, m) == 1:
                 return i + 1
 
-def powmod(x, y, m):
-    ret = 1
-    for i in range(y):
-        ret = ret * x % m
-    return ret
+def get_order(g: int, _p: int, factors: list) -> tuple([int, list]):
+    order = _p - 1
+    ord_factors = []
+    for f in factors:
+        if pow(g, order // f, _p) == 1:
+            order //= f
+        else:
+            ord_factors.append(f)
+    return order, [(i, ord_factors.count(i)) for i in set(ord_factors)]
 
 def g(m):
     ret = []
@@ -212,7 +216,7 @@ def g(m):
             break
     for i in range(ph):
         if gcd(i + 1, ph) == 1:
-            ret.append(powmod(g, i+1, m))
+            ret.append(pow(g, i+1, m))
     ret.sort()
     return tuple(ret)
 
@@ -246,8 +250,9 @@ def caesar(stringstream, offset):
     return ret
                 
 def Morse(cipertext, flag0 = '0', flag1 = '1', Split = ' '):
-    cipertext = cipertext.replace(flag0, '0')
+    cipertext = cipertext.replace(flag0, '\x00')
     cipertext = cipertext.replace(flag1, '1')
+    cipertext = cipertext.replace('\x00', '0') 
     cipertext = cipertext.split(Split)
     ret = ""
     for each in cipertext:
@@ -602,8 +607,16 @@ def findAllSolutions(x, e, m):
     get all solutions for y ** e = x mod m
     '''
     
+    print("start to find all PRoots")
+    
     proots = findAllPRoots(e, m)
+    
+    print("start to get one result")
+    
     one_result = AMM(x, e, m)
+    
+    print("start to find all roots")
+    
     result = set()
     for root in proots:
         tmp = one_result * root % m
@@ -759,7 +772,7 @@ def related_message_attack(a, b, c1, c2, n):
 
 import subprocess
 
-def factor(N, path = "yafu-x64.exe"):
+def factor(N, path = "C:\\Users\\10310\\学习\\program\\ctf\\crypto\\yafu-1.34\\yafu-x64.exe"):
     
     message = b"factor(%d)" % N
     p = subprocess.Popen(path, stdin = subprocess.PIPE, stdout = subprocess.PIPE)
@@ -872,6 +885,23 @@ def recover_MT_state(nums):
     random.seed()
     random.setstate((3, tuple(state), None))
 
+def backtrace(state):
+    for i in range(623, -1, -1):
+        res = 0
+        tmp = state[i]
+        tmp ^= state[(i + 397) % 624]
+        if (tmp & 0x80000000) == 0x80000000:
+            tmp ^= 0x9908b0df
+        res = (tmp << 1) & 0x80000000
+        tmp = state[(i - 1 + 624) % 624]
+        tmp ^= state[(i - 1 + 397) % 624]
+        if (tmp & 0x80000000) == 0x80000000:
+            tmp ^= 0x9908b0df
+            res |= 1
+        res |= (tmp << 1) & 0x7fffffff
+        state[i] = res
+    return state
+
 from hashlib import sha256
 def proof(known, hashcode, charset, method = sha256):
     for each1 in charset:
@@ -893,7 +923,7 @@ def xor(s1, s2 = None):
         for each1, each2 in zip(s1, s2):
             res.append(int(each1) ^ int(each2))
         
-        return res
+        return bytes(res)
         
 
 def debug():
@@ -904,9 +934,7 @@ def debug():
 #debug()
 
 '''
-data1
-Out[25]: b'\xd11\xdd\x02\xc5\xe6\xee\xc4i=\x9a\x06\x98\xaf\xf9\\/\xca\xb5\x87\x12F~\xab@\x04X>\xb8\xfb\x7f\x89U\xad4\x06\t\xf4\xb3\x02\x83\xe4\x88\x83%qAZ\x08Q%\xe8\xf7\xcd\xc9\x9f\xd9\x1d\xbd\xf2\x807<[\xd8\x82>1V4\x8f[\xaem\xac\xd46\xc9\x19\xc6\xddS\xe2\xb4\x87\xda\x03\xfd\x029c\x06\xd2H\xcd\xa0\xe9\x9f3B\x0fW~\xe8\xceT\xb6p\x80\xa8\r\x1e\xc6\x98!\xbc\xb6\xa8\x83\x93\x96\xf9e+o\xf7*p'
+data1 = b'\xd11\xdd\x02\xc5\xe6\xee\xc4i=\x9a\x06\x98\xaf\xf9\\/\xca\xb5\x87\x12F~\xab@\x04X>\xb8\xfb\x7f\x89U\xad4\x06\t\xf4\xb3\x02\x83\xe4\x88\x83%qAZ\x08Q%\xe8\xf7\xcd\xc9\x9f\xd9\x1d\xbd\xf2\x807<[\xd8\x82>1V4\x8f[\xaem\xac\xd46\xc9\x19\xc6\xddS\xe2\xb4\x87\xda\x03\xfd\x029c\x06\xd2H\xcd\xa0\xe9\x9f3B\x0fW~\xe8\xceT\xb6p\x80\xa8\r\x1e\xc6\x98!\xbc\xb6\xa8\x83\x93\x96\xf9e+o\xf7*p'
 
-data2
-Out[26]: b'\xd11\xdd\x02\xc5\xe6\xee\xc4i=\x9a\x06\x98\xaf\xf9\\/\xca\xb5\x07\x12F~\xab@\x04X>\xb8\xfb\x7f\x89U\xad4\x06\t\xf4\xb3\x02\x83\xe4\x88\x83%\xf1AZ\x08Q%\xe8\xf7\xcd\xc9\x9f\xd9\x1d\xbdr\x807<[\xd8\x82>1V4\x8f[\xaem\xac\xd46\xc9\x19\xc6\xddS\xe24\x87\xda\x03\xfd\x029c\x06\xd2H\xcd\xa0\xe9\x9f3B\x0fW~\xe8\xceT\xb6p\x80(\r\x1e\xc6\x98!\xbc\xb6\xa8\x83\x93\x96\xf9e\xabo\xf7*p'
+data2 = b'\xd11\xdd\x02\xc5\xe6\xee\xc4i=\x9a\x06\x98\xaf\xf9\\/\xca\xb5\x07\x12F~\xab@\x04X>\xb8\xfb\x7f\x89U\xad4\x06\t\xf4\xb3\x02\x83\xe4\x88\x83%\xf1AZ\x08Q%\xe8\xf7\xcd\xc9\x9f\xd9\x1d\xbdr\x807<[\xd8\x82>1V4\x8f[\xaem\xac\xd46\xc9\x19\xc6\xddS\xe24\x87\xda\x03\xfd\x029c\x06\xd2H\xcd\xa0\xe9\x9f3B\x0fW~\xe8\xceT\xb6p\x80(\r\x1e\xc6\x98!\xbc\xb6\xa8\x83\x93\x96\xf9e\xabo\xf7*p'
 '''
