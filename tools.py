@@ -2,7 +2,7 @@
 """
 Created on Sat Nov 21 11:10:52 2020
 
-@author: 
+@author: DuanYuFi
 """
 from math import gcd, sqrt, ceil
 from Crypto.Util.number import *
