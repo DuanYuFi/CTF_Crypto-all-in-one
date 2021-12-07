@@ -720,7 +720,7 @@ def break_key(text, length, decode_function, key_char, charset = string.ascii_lo
     return bytes(key)
 
 
-def solve_classical(text, decode_function, min_length = 1, max_length = 100, key_char = string.ascii_letters):
+def solve_classical(text, decode_function, min_length = 1, max_length = 100, key_char = string.ascii_letters.encode()):
     length = get_key_length(text, max_length, min_length)[1]
     key = break_key(text, length, decode_function, key_char)
     print("=============================")
