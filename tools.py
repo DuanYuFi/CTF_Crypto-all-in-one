@@ -180,21 +180,12 @@ def phi(m):
     if isPrime(m):
         return m - 1
     factors = factor(m)
-    factors = [each[0] for each in factors]
     ret = m
     for each in factors:
-        ret //= each
-        ret *= (each - 1)
+        ret //= each[0]
+        ret *= (each[0] - 1)
     return ret
 
-def order(a, m):
-    if gcd(a, m) != 1:
-        return -1
-    else:
-        tmp = phi(m)
-        for i in range(tmp):
-            if pow(a, i + 1, m) == 1:
-                return i + 1
 
 def get_order(g: int, _p: int, factors: list) -> tuple([int, list]):
     order = _p - 1
@@ -204,7 +195,18 @@ def get_order(g: int, _p: int, factors: list) -> tuple([int, list]):
             order //= f
         else:
             ord_factors.append(f)
-    return order, [(i, ord_factors.count(i)) for i in set(ord_factors)]
+    return order
+
+def order(g, n):
+    factors = factor(n)
+    orders = []
+    modulus = []
+    for each, i in factors:
+        this_factor = factor(each - 1, to_list = True)
+        orders.append(get_order(g, each, this_factor))
+        modulus.append(pow(each, i))
+    
+    return CRT(orders, modulus)
 
 def g(m):
     ret = []
@@ -613,6 +615,7 @@ def findAllSolutions(x, e, m):
     
     print("start to get one result")
     
+    x %= m
     one_result = AMM(x, e, m)
     
     print("start to find all roots")
@@ -636,7 +639,7 @@ def xgcd(a,b):
     return (lastX, lastY)
 
 IC = 0.065
-charset = string.ascii_letters
+charset = string.ascii_letters.encode()
 naturalLanguageP = [0.08167, 0.01492, 0.02782, 0.04253, 0.12702, 0.02228, 0.02015, 0.06094, 0.06966, 0.00153, 0.00772, 0.04025, 0.02406, 0.06749, 0.07507, 0.01929, 0.00095, 0.05987, 0.06327, 0.09056,0.02758, 0.00978, 0.02360, 0.00150, 0.01974, 0.00074]
 
 def count_p(text):
@@ -661,10 +664,10 @@ def split_text(text, length):
     strings = []
     len_text = len(text)
     for i in range(length):
-        this = ""
+        this = []
         for j in range(i, len_text, length):
-            this += text[j]
-        strings.append(this)
+            this.append(text[j])
+        strings.append(bytes(this))
         
     return strings
 
@@ -692,10 +695,10 @@ def get_key_length(text, max_length, min_length):
 
 def break_key(text, length, decode_function, key_char, charset = string.ascii_lowercase):
     strings = split_text(text, length)
-    key = ""
+    key = []
     for i in range(length):
         maxx = 0
-        this_char = ''
+        this_char = None
         for each_char in key_char:
             plain_text = decode_function(strings[i], each_char).lower()
             count = count_p(plain_text)
@@ -713,48 +716,11 @@ def break_key(text, length, decode_function, key_char, charset = string.ascii_lo
             if tmp > maxx:
                 (maxx, this_char) = (tmp, each_char)
         
-        key += this_char
-    return key
+        key.append(this_char)
+    return bytes(key)
 
-def stradd(s1, s2, charset = string.ascii_lowercase, skip = False):
-    l2 = len(s2)
-    l = len(charset)
-    res = ""
-    pointer = 0
-    
-    for each in s1:
-        this_key = s2[pointer]
-        if each not in charset:
-            if skip:
-                pointer = (pointer + 1) % l2
-            res += each
-            continue
-        i1 = charset.index(each)
-        i2 = charset.index(this_key)
-        res += charset[(i1 + i2) % l]
-        pointer = (pointer + 1) % l2
-    return res
 
-def strsub(s1, s2, charset = string.ascii_lowercase, skip = False):
-    l2 = len(s2)
-    l = len(charset)
-    res = ""
-    pointer = 0
-    
-    for each in s1:
-        this_key = s2[pointer]
-        if each not in charset:
-            if skip:
-                pointer = (pointer + 1) % l2
-            res += each
-            continue
-        i1 = charset.index(each)
-        i2 = charset.index(this_key)
-        res += charset[(i1 - i2 + l) % l]
-        pointer = (pointer + 1) % l2
-    return res
-
-def solve_classical(text, decode_function = strsub, min_length = 1, max_length = 100, key_char = string.ascii_letters):
+def solve_classical(text, decode_function, min_length = 1, max_length = 100, key_char = string.ascii_letters):
     length = get_key_length(text, max_length, min_length)[1]
     key = break_key(text, length, decode_function, key_char)
     print("=============================")
@@ -772,7 +738,7 @@ def related_message_attack(a, b, c1, c2, n):
 
 import subprocess
 
-def factor(N, path = "C:\\Users\\10310\\学习\\program\\ctf\\crypto\\yafu-1.34\\yafu-x64.exe"):
+def factor(N, path = "C:\\Users\\10310\\学习\\program\\ctf\\crypto\\yafu-1.34\\yafu-x64.exe", to_list = False):
     
     message = b"factor(%d)" % N
     p = subprocess.Popen(path, stdin = subprocess.PIPE, stdout = subprocess.PIPE)
@@ -818,8 +784,24 @@ def factor(N, path = "C:\\Users\\10310\\学习\\program\\ctf\\crypto\\yafu-1.34\
             else:
                 ret.append(each)
     
-    return tuple(result)
-            
+    if to_list:
+        res = []
+        for each, i in result:
+            res += [each] * i
+        return tuple(res)
+    
+    else:    
+        return tuple(result)
+
+import requests
+
+def factordb(n_to_fac):
+    response = requests.get(r'http://factordb.com/api', params={"query": str(n_to_fac)})
+    facs = []
+    for one in response.json().get("factors"):
+        facs += [int(one[0])] * one[1]
+    return facs
+           
 def recover1(secret, shift, nbit = 32):
     
     value = secret >> (nbit - shift)
@@ -925,6 +907,22 @@ def xor(s1, s2 = None):
         
         return bytes(res)
         
+def bytes_add(l1, l2):
+    assert len(l1) == len(l2), "length of l1 and l2 unequal"
+    res = []
+    for each1, each2 in zip(l1, l2):
+        res.append((l1 + l2) % 256)
+    
+    return bytes(res)
+
+def bytes_sub(l1, l2):
+    assert len(l1) == len(l2), "length of l1 and l2 unequal"
+    res = []
+    for each1, each2 in zip(l1, l2):
+        res.append((l1 - l2) % 256)
+    
+    return bytes(res)
+
 
 def debug():
     print(Pollard_rho(15))
